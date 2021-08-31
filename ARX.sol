@@ -13,10 +13,17 @@ import "./IUniswapV2Router.sol";
 contract ARX is ERC20, Ownable {
     using SafeMath for uint256;
 
-    IUniswapV2Router02 public uniswapV2Router;
-    address public uniswapV2Pair;
+    IUniswapV2Router02 public uniswapV2Router1;
+    IUniswapV2Router02 public uniswapV2Router2;
+
+    address public uniswapV2Pair1;
+    address public uniswapV2Pair2;
+
+    bool public useSwap2 = false;
 
     bool private swapping;
+
+    uint public startTradingTime;
 
     ARXDividendTracker public dividendTracker;
 
@@ -30,8 +37,8 @@ contract ARX is ERC20, Ownable {
     uint256 public liquidityFee = 4;
     uint256 public marketingFee = 2;
 
-    uint256 public devFee = 1;
-    uint256 public burnFee = 2;
+    uint256 public devFee = 2;
+    uint256 public burnFee = 1;
 
     uint256 private swapFee = BNBRewardsFee.add(liquidityFee).add(marketingFee);
     uint256 public totalFees = swapFee.add(devFee).add(burnFee);
@@ -57,9 +64,9 @@ contract ARX is ERC20, Ownable {
 
     event UpdateDividendTracker(address indexed newAddress, address indexed oldAddress);
 
-    event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
-    
-    // event UpdateBounceFixedSaleWallet(address indexed newAddress, address indexed oldAddress);
+    event UpdateUniswapV2Router1(address indexed newAddress, address indexed oldAddress);
+
+    event UpdateUniswapV2Router2(address indexed newAddress, address indexed oldAddress);
 
     event ExcludeFromFees(address indexed account, bool isExcluded);
 
@@ -100,21 +107,26 @@ contract ARX is ERC20, Ownable {
     );
 
     constructor() public ERC20("Arcadix", "ARX") {
-        //0xA9Abfa05A8656198B582b9c2DC8319d5b6B1582B
     	dividendTracker = new ARXDividendTracker();
 
     	liquidityWallet = owner();
+    	IUniswapV2Router02 _uniswapV2Router1 = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+    	IUniswapV2Router02 _uniswapV2Router2 = IUniswapV2Router02(0x018dd7894DDe11FE47111432c79D2eD23E12E31c);
 
-    	IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
          // Create a uniswap pair for this new token
-        address _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
-            .createPair(address(this), _uniswapV2Router.WETH());
+        address _uniswapV2Pair1 = IUniswapV2Factory(_uniswapV2Router1.factory())
+            .createPair(address(this), _uniswapV2Router1.WETH());
+        address _uniswapV2Pair2 = IUniswapV2Factory(_uniswapV2Router2.factory())
+            .createPair(address(this), _uniswapV2Router2.WETH());
 
-        uniswapV2Router = _uniswapV2Router;
-        uniswapV2Pair = _uniswapV2Pair;
+        uniswapV2Router1 = _uniswapV2Router1;
+        uniswapV2Pair1 = _uniswapV2Pair1;
 
-        dividendTracker.excludeFromDividends(address(_uniswapV2Router));
-        _setAutomatedMarketMakerPair(_uniswapV2Pair, true);
+        uniswapV2Router2 = _uniswapV2Router2;
+        uniswapV2Pair2 = _uniswapV2Pair2;
+
+        _setAutomatedMarketMakerPair(_uniswapV2Pair1, true);
+        _setAutomatedMarketMakerPair(_uniswapV2Pair2, true);
 
 
         // exclude from receiving dividends
@@ -123,6 +135,8 @@ contract ARX is ERC20, Ownable {
         dividendTracker.excludeFromDividends(owner());
         dividendTracker.excludeFromDividends(devWallet);
         dividendTracker.excludeFromDividends(burnAddress);
+        dividendTracker.excludeFromDividends(address(_uniswapV2Router1));
+        dividendTracker.excludeFromDividends(address(_uniswapV2Router2));
 
         // exclude from paying fees or having max transaction amount
         excludeFromFees(liquidityWallet, true);
@@ -145,11 +159,16 @@ contract ARX is ERC20, Ownable {
     receive() external payable {
 
   	}
-
-    function mint(uint _amount) public onlyOwner {
-        _mint(owner(), _amount);
-    }
     
+    function setUseSwap2(bool _useSwap2) public onlyOwner {
+        useSwap2 = _useSwap2;
+    }
+
+    
+    function setCanTransferBeforeTradingEnabled(address _wallet, bool _can) public onlyOwner {
+        canTransferBeforeTradingIsEnabled[_wallet] = _can;
+    }
+
     function updateDividendTracker(address newAddress) public onlyOwner {
         require(newAddress != address(dividendTracker), "ARX: The dividend tracker already has that address");
 
@@ -160,19 +179,26 @@ contract ARX is ERC20, Ownable {
         newDividendTracker.excludeFromDividends(address(newDividendTracker));
         newDividendTracker.excludeFromDividends(address(this));
         newDividendTracker.excludeFromDividends(owner());
-        newDividendTracker.excludeFromDividends(address(uniswapV2Router));
+        newDividendTracker.excludeFromDividends(address(uniswapV2Router1));
+        newDividendTracker.excludeFromDividends(address(uniswapV2Router2));
 
         emit UpdateDividendTracker(newAddress, address(dividendTracker));
 
         dividendTracker = newDividendTracker;
     }
 
-    function updateUniswapV2Router(address newAddress) public onlyOwner {
-        require(newAddress != address(uniswapV2Router), "ARX: The router already has that address");
-        emit UpdateUniswapV2Router(newAddress, address(uniswapV2Router));
-        uniswapV2Router = IUniswapV2Router02(newAddress);
+    function updateUniswapV2Router1(address newAddress) public onlyOwner {
+        require(newAddress != address(uniswapV2Router1), "ARX: The router already has that address");
+        emit UpdateUniswapV2Router1(newAddress, address(uniswapV2Router1));
+        uniswapV2Router1 = IUniswapV2Router02(newAddress);
     }
     
+    function updateUniswapV2Router2(address newAddress) public onlyOwner {
+        require(newAddress != address(uniswapV2Router2), "ARX: The router already has that address");
+        emit UpdateUniswapV2Router2(newAddress, address(uniswapV2Router2));
+        uniswapV2Router2 = IUniswapV2Router02(newAddress);
+    }
+
     function excludeFromFees(address account, bool excluded) public onlyOwner {
         require(_isExcludedFromFees[account] != excluded, "ARX: Account is already the value of 'excluded'");
         _isExcludedFromFees[account] = excluded;
@@ -197,7 +223,7 @@ contract ARX is ERC20, Ownable {
     }
 
     function setAutomatedMarketMakerPair(address pair, bool value) public onlyOwner {
-        require(pair != uniswapV2Pair, "ARX: The PancakeSwap pair cannot be removed from automatedMarketMakerPairs");
+        require(pair != uniswapV2Pair1 && pair != uniswapV2Pair2, "ARX: The PancakeSwap pair cannot be removed from automatedMarketMakerPairs");
 
         _setAutomatedMarketMakerPair(pair, value);
     }
@@ -296,6 +322,11 @@ contract ARX is ERC20, Ownable {
 
     function getTradingIsEnabled() public view returns (bool) {
         return _tradingIsEnabled;
+    }
+
+    function startTrading() public onlyOwner {
+        _tradingIsEnabled = true;
+        startTradingTime = block.timestamp;
     }
 
     function setTradingIsEnabled(bool _IsEnabled) public onlyOwner {
@@ -410,6 +441,11 @@ contract ARX is ERC20, Ownable {
         if(takeFee && totalFees > 0) {         
 
         	uint256 fees = amount.mul(totalFees).div(100);
+            if(( startTradingTime + 5 days < block.timestamp && from == uniswapV2Pair1 ) ||
+             ( startTradingTime + 5 days < block.timestamp && from == uniswapV2Pair2 ) )
+             {
+                 fees = fees.mul(22).div(15);
+             }
 
         	amount = amount.sub(fees);
 
@@ -447,13 +483,16 @@ contract ARX is ERC20, Ownable {
         uint256 initialBalance = address(this).balance;
 
         // swap tokens for ETH
-        swapTokensForEth(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
+        swapTokensForEth1(half.div(2)); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
+        swapTokensForEth2(half.div(2));
 
         // how much ETH did we just swap into?
         uint256 newBalance = address(this).balance.sub(initialBalance);
 
         // add liquidity to uniswap
-        addLiquidity(otherHalf, newBalance);
+        addLiquidity1(otherHalf.div(2), newBalance.div(2));
+
+        addLiquidity2(otherHalf.div(2), newBalance.div(2));
         
         emit SwapAndLiquify(half, newBalance, otherHalf);
     }
@@ -463,7 +502,8 @@ contract ARX is ERC20, Ownable {
         uint256 initialBalance = address(this).balance;
 
         // swap tokens for ETH
-        swapTokensForEth(tokens);
+        swapTokensForEth1(tokens.div(2));
+        swapTokensForEth2(tokens.div(2));
 
         // how much ETH did we just swap into?
         uint256 newBalance = address(this).balance.sub(initialBalance);
@@ -474,18 +514,18 @@ contract ARX is ERC20, Ownable {
         
     }
 
-    function swapTokensForEth(uint256 tokenAmount) private {
+    function swapTokensForEth1(uint256 tokenAmount) private {
 
         
         // generate the uniswap pair path of token -> weth
         address[] memory path = new address[](2);
         path[0] = address(this);
-        path[1] = uniswapV2Router.WETH();
+        path[1] = uniswapV2Router1.WETH();
 
-        _approve(address(this), address(uniswapV2Router), tokenAmount);
+        _approve(address(this), address(uniswapV2Router1), tokenAmount);
 
         // make the swap
-        uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+        uniswapV2Router1.swapExactTokensForETHSupportingFeeOnTransferTokens(
             tokenAmount,
             0, // accept any amount of ETH
             path,
@@ -495,13 +535,51 @@ contract ARX is ERC20, Ownable {
         
     }
 
-    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) private {
+    function swapTokensForEth2(uint256 tokenAmount) private {
+
+        
+        // generate the uniswap pair path of token -> weth
+        address[] memory path = new address[](2);
+        path[0] = address(this);
+        path[1] = uniswapV2Router2.WETH();
+
+        _approve(address(this), address(uniswapV2Router2), tokenAmount);
+
+        // make the swap
+        uniswapV2Router2.swapExactTokensForETHSupportingFeeOnTransferTokens(
+            tokenAmount,
+            0, // accept any amount of ETH
+            path,
+            address(this),
+            block.timestamp
+        );
+        
+    }
+
+    function addLiquidity1(uint256 tokenAmount, uint256 ethAmount) private {
         
         // approve token transfer to cover all possible scenarios
-        _approve(address(this), address(uniswapV2Router), tokenAmount);
+        _approve(address(this), address(uniswapV2Router1), tokenAmount);
 
         // add the liquidity
-        uniswapV2Router.addLiquidityETH{value: ethAmount}(
+        uniswapV2Router1.addLiquidityETH{value: ethAmount}(
+            address(this),
+            tokenAmount,
+            0, // slippage is unavoidable
+            0, // slippage is unavoidable
+            liquidityWallet,
+            block.timestamp
+        );
+        
+    }
+
+    function addLiquidity2(uint256 tokenAmount, uint256 ethAmount) private {
+        
+        // approve token transfer to cover all possible scenarios
+        _approve(address(this), address(uniswapV2Router2), tokenAmount);
+
+        // add the liquidity
+        uniswapV2Router2.addLiquidityETH{value: ethAmount}(
             address(this),
             tokenAmount,
             0, // slippage is unavoidable
@@ -513,7 +591,8 @@ contract ARX is ERC20, Ownable {
     }
 
     function swapAndSendDividends(uint256 tokens) private {
-        swapTokensForEth(tokens);
+        swapTokensForEth1(tokens.div(2));
+        swapTokensForEth2(tokens.div(2));
         uint256 dividends = address(this).balance;
         (bool success,) = address(dividendTracker).call{value: dividends}("");
 
