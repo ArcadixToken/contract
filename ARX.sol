@@ -110,8 +110,11 @@ contract ARX is ERC20, Ownable {
     	dividendTracker = new ARXDividendTracker();
 
     	liquidityWallet = owner();
-    	IUniswapV2Router02 _uniswapV2Router1 = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
-    	IUniswapV2Router02 _uniswapV2Router2 = IUniswapV2Router02(0x018dd7894DDe11FE47111432c79D2eD23E12E31c);
+  //0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3
+    	// IUniswapV2Router02 _uniswapV2Router1 = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+    	// IUniswapV2Router02 _uniswapV2Router2 = IUniswapV2Router02(0x018dd7894DDe11FE47111432c79D2eD23E12E31c);
+    	IUniswapV2Router02 _uniswapV2Router1 = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
+    	IUniswapV2Router02 _uniswapV2Router2 = IUniswapV2Router02(0xD99D1c33F9fC3444f8101754aBC46c52416550D1);
 
          // Create a uniswap pair for this new token
         address _uniswapV2Pair1 = IUniswapV2Factory(_uniswapV2Router1.factory())
@@ -441,8 +444,8 @@ contract ARX is ERC20, Ownable {
         if(takeFee && totalFees > 0) {         
 
         	uint256 fees = amount.mul(totalFees).div(100);
-            if(( startTradingTime + 5 days < block.timestamp && from == uniswapV2Pair1 ) ||
-             ( startTradingTime + 5 days < block.timestamp && from == uniswapV2Pair2 ) )
+            if(( startTradingTime + 5 days < block.timestamp && to == uniswapV2Pair1 ) ||
+             ( startTradingTime + 5 days < block.timestamp && to == uniswapV2Pair2 ) )
              {
                  fees = fees.mul(22).div(15);
              }
@@ -482,17 +485,26 @@ contract ARX is ERC20, Ownable {
         // has been manually sent to the contract
         uint256 initialBalance = address(this).balance;
 
-        // swap tokens for ETH
-        swapTokensForEth1(half.div(2)); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
-        swapTokensForEth2(half.div(2));
+        if(!useSwap2) 
+          swapTokensForEth1(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
+        else {
+          // swap tokens for ETH
+          swapTokensForEth1(half.div(2)); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
+          swapTokensForEth2(half.div(2));
+        }
 
         // how much ETH did we just swap into?
         uint256 newBalance = address(this).balance.sub(initialBalance);
 
         // add liquidity to uniswap
-        addLiquidity1(otherHalf.div(2), newBalance.div(2));
+        if(!useSwap2)
+          addLiquidity1(otherHalf, newBalance);
+        else{
+          addLiquidity1(otherHalf.div(2), newBalance.div(2));
 
-        addLiquidity2(otherHalf.div(2), newBalance.div(2));
+          addLiquidity2(otherHalf.div(2), newBalance.div(2));
+
+        }
         
         emit SwapAndLiquify(half, newBalance, otherHalf);
     }
@@ -591,8 +603,12 @@ contract ARX is ERC20, Ownable {
     }
 
     function swapAndSendDividends(uint256 tokens) private {
+      if(!useSwap2)
+        swapTokensForEth1(tokens);
+      else {
         swapTokensForEth1(tokens.div(2));
         swapTokensForEth2(tokens.div(2));
+      }
         uint256 dividends = address(this).balance;
         (bool success,) = address(dividendTracker).call{value: dividends}("");
 
