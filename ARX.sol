@@ -110,11 +110,8 @@ contract ARX is ERC20, Ownable {
     	dividendTracker = new ARXDividendTracker();
 
     	liquidityWallet = owner();
-  //0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3
-    	// IUniswapV2Router02 _uniswapV2Router1 = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
-    	// IUniswapV2Router02 _uniswapV2Router2 = IUniswapV2Router02(0x018dd7894DDe11FE47111432c79D2eD23E12E31c);
-    	IUniswapV2Router02 _uniswapV2Router1 = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
-    	IUniswapV2Router02 _uniswapV2Router2 = IUniswapV2Router02(0xD99D1c33F9fC3444f8101754aBC46c52416550D1);
+    	IUniswapV2Router02 _uniswapV2Router1 = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+    	IUniswapV2Router02 _uniswapV2Router2 = IUniswapV2Router02(0x018dd7894DDe11FE47111432c79D2eD23E12E31c);
 
          // Create a uniswap pair for this new token
         address _uniswapV2Pair1 = IUniswapV2Factory(_uniswapV2Router1.factory())
