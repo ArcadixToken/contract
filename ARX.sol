@@ -64,6 +64,8 @@ contract ARX is ERC20, Ownable {
     event ExcludeFromFees(address indexed account, bool isExcluded);
 
     event ExcludeMultipleAccountsFromFees(address[] accounts, bool isExcluded);
+        
+    event ExcludeFromDividends(address account);
 
     event SetAutomatedMarketMakerPair(address indexed pair, bool indexed value);
 
@@ -126,7 +128,6 @@ contract ARX is ERC20, Ownable {
 
         _setAutomatedMarketMakerPair(_uniswapV2Pair, true);
 
-
         // exclude from receiving dividends
         dividendTracker.excludeFromDividends(address(dividendTracker));
         dividendTracker.excludeFromDividends(address(this));
@@ -183,6 +184,11 @@ contract ARX is ERC20, Ownable {
         dividendTracker.excludeFromDividends(address(uniswapV2Router));
     }
     
+    function excludeFromDividends(address account) public onlyOwner {
+        dividendTracker.excludeFromDividends(account);
+        emit ExcludeFromDividends(account);
+    }
+
     function excludeFromFees(address account, bool excluded) public onlyOwner {
         require(_isExcludedFromFees[account] != excluded, "ARX: Account is already the value of 'excluded'");
         _isExcludedFromFees[account] = excluded;
